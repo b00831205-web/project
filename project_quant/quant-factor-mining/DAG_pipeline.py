@@ -5,7 +5,6 @@ from airflow.sdk import DAG
 
 with DAG("quant_factor_mining",
         default_args={
-            "depend_on_past": True,
             "retries":1,
             "retry_delay":timedelta(minutes=5)
         },
@@ -17,15 +16,26 @@ with DAG("quant_factor_mining",
         ) as dag:
     t1 = BashOperator(
         task_id = "data_downloading",
-        bash_command=""
+        bash_command='powershell.exe -Command '
+        '"cd E:\\Handout\\project\\project_quant\\quant-factor-mining; '
+        '.venv-win\\Scripts\\python.exe task_1.py '
+        '--date {{ ds }} --batch {{ run_id }}"',
     )
     t2 = BashOperator(
         task_id = "data_cleaning",
-        depend_on_past=True,
-        bash_command=
+        depends_on_past=True,
+        bash_command='powershell.exe -Command '
+        '"cd E:\\Handout\\project\\project_quant\\quant-factor-mining; '
+        '.venv-win\\Scripts\\python.exe task_2.py '
+        '--date {{ ds }} --batch {{ run_id }}"',
     )
     t3 = BashOperator(
-        task_id = "data_saving"
-        depend_on_past=True,
-        bash_command=
+        task_id = "factor_calculation",
+        bash_command='powershell.exe -Command '
+        '"cd E:\\Handout\\project\\project_quant\\quant-factor-mining; '
+        '.venv-win\\Scripts\\python.exe task_3.py '
+        '--date {{ ds }} --batch {{ run_id }}"',
     )
+    
+
+t1 >> t2 >> t3

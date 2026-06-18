@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF 拆页台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --paper:#EBEDF1;
+    --surface:#FFFFFF;
+    --ink:#15191F;
+    --muted:#6A727E;
+    --faint:#9AA2AD;
+    --line:#D6DAE1;
+    --line-strong:#C2C8D1;
+    --accent:#0E7C66;
+    --accent-ink:#0A5C4C;
+    --accent-soft:#D8EDE7;
+    --mark:#B4532A;
+    --mark-soft:#F3E2D9;
+    --danger:#B23A48;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(21,25,31,.05),0 8px 24px rgba(21,25,31,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:32px 20px 80px;
+  }
+  .wrap{max-width:980px;margin:0 auto}
+
+  /* Header */
+  header{margin-bottom:26px}
+  .kicker{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);font-weight:600;margin-bottom:10px;
+  }
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;font-size:34px;line-height:1.05;letter-spacing:-.02em;
+    margin:0 0 10px;
+  }
+  .sub{color:var(--muted);max-width:60ch;margin:0}
+
+  /* Drop zone */
+  .drop{
+    position:relative;margin-top:24px;
+    background:var(--surface);
+    border:1.5px dashed var(--line-strong);
+    border-radius:var(--radius);
+    padding:54px 28px;text-align:center;cursor:pointer;
+    transition:border-color .18s,background .18s,transform .18s;
+    overflow:hidden;
+  }
+  .drop::after{
+    content:"";position:absolute;top:0;right:0;
+    border-width:0 28px 28px 0;border-style:solid;
+    border-color:transparent var(--paper) transparent transparent;
+    transition:border-width .18s;
+  }
+  .drop:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .drop:hover::after{border-width:0 34px 34px 0}
+  .drop.drag{border-color:var(--accent);background:var(--accent-soft)}
+  .drop h2{font-family:'Space Grotesk',sans-serif;font-size:18px;margin:14px 0 6px;font-weight:600}
+  .drop p{color:var(--muted);margin:0;font-size:13px}
+  .drop .glyph{
+    width:46px;height:46px;margin:0 auto;display:grid;place-items:center;
+    border-radius:11px;background:var(--accent-soft);color:var(--accent-ink);
+  }
+  .drop .glyph svg{width:24px;height:24px}
+
+  /* Workspace */
+  .stage{display:none}
+  .stage.on{display:block}
+
+  .bar{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 18px;margin-top:24px;box-shadow:var(--shadow);
+  }
+  .fileinfo{display:flex;align-items:center;gap:12px;min-width:0}
+  .fileinfo .doticon{width:36px;height:36px;flex:none;border-radius:9px;background:var(--mark-soft);color:var(--mark);display:grid;place-items:center}
+  .fileinfo .doticon svg{width:19px;height:19px}
+  .fmeta{min-width:0}
+  .fname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42ch}
+  .fcount{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)}
+  .bar .spacer{flex:1}
+  .ghost{
+    background:none;border:1px solid var(--line-strong);color:var(--ink);
+    font:inherit;font-size:13px;padding:8px 14px;border-radius:9px;cursor:pointer;
+    transition:border-color .15s,background .15s;
+  }
+  .ghost:hover{border-color:var(--accent);color:var(--accent-ink)}
+
+  /* Mode tabs */
+  .modes{display:inline-flex;background:var(--paper);border-radius:11px;padding:4px;gap:4px;border:1px solid var(--line)}
+  .modes button{
+    font:inherit;font-weight:500;font-size:14px;border:none;background:none;cursor:pointer;
+    padding:7px 16px;border-radius:8px;color:var(--muted);transition:.15s;
+  }
+  .modes button.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  .panel{margin-top:20px}
+  .panel.hide{display:none}
+
+  /* Single mode toolbar */
+  .picktools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .picktools .chiplabel{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-right:4px}
+  .minibtn{
+    font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--surface);
+    padding:6px 11px;border-radius:8px;cursor:pointer;color:var(--ink);transition:.15s;
+  }
+  .minibtn:hover{border-color:var(--accent);color:var(--accent-ink)}
+
+  /* Page grid */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:14px}
+  .pagecard{
+    position:relative;background:var(--surface);border:1.5px solid var(--line);
+    border-radius:11px;padding:9px;cursor:pointer;text-align:center;
+    transition:border-color .15s,transform .12s,box-shadow .15s;font:inherit;
+  }
+  .pagecard:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--line-strong)}
+  .pagecard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .pagecard.sel{border-color:var(--accent);background:var(--accent-soft)}
+  .pagecard .thumb{
+    width:100%;aspect-ratio:3/4;background:var(--paper);border-radius:5px;
+    display:grid;place-items:center;overflow:hidden;border:1px solid var(--line);
+  }
+  .pagecard canvas{max-width:100%;max-height:100%;display:block;background:#fff}
+  .pagecard .ph{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--faint)}
+  .pagecard .num{
+    margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;
+    font-weight:600;color:var(--muted);
+  }
+  .pagecard.sel .num{color:var(--accent-ink)}
+  .pagecard .tick{
+    position:absolute;top:7px;right:7px;width:20px;height:20px;border-radius:50%;
+    background:var(--accent);color:#fff;display:none;place-items:center;
+  }
+  .pagecard .tick svg{width:12px;height:12px}
+  .pagecard.sel .tick{display:grid}
+
+  /* Range mode */
+  .ranges{display:flex;flex-direction:column;gap:12px;margin-bottom:6px}
+  .rangerow{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 14px;
+  }
+  .rangerow .idx{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);font-weight:600;width:22px}
+  .field{display:flex;align-items:center;gap:7px}
+  .field label{font-size:13px;color:var(--muted)}
+  .field input{
+    width:74px;font:inherit;font-family:'JetBrains Mono',monospace;font-size:14px;
+    padding:7px 9px;border:1px solid var(--line-strong);border-radius:8px;background:var(--paper);color:var(--ink);
+  }
+  .field input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+  .rangerow.bad input{border-color:var(--danger)}
+  .rangerow .outname{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--faint);flex:1;min-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rangerow .del{background:none;border:none;color:var(--faint);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;border-radius:6px}
+  .rangerow .del:hover{color:var(--danger);background:var(--mark-soft)}
+  .addrange{
+    font:inherit;font-size:13.5px;color:var(--accent-ink);background:var(--accent-soft);
+    border:1px dashed var(--accent);border-radius:10px;padding:10px 16px;cursor:pointer;width:100%;
+    margin-top:4px;transition:.15s;
+  }
+  .addrange:hover{background:#cbe7df}
+
+  /* Action footer */
+  .actions{
+    position:sticky;bottom:0;margin-top:26px;
+    background:linear-gradient(to top,var(--paper) 70%,transparent);
+    padding-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  }
+  .mergeopt{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink);cursor:pointer;user-select:none}
+  .mergeopt input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+  .actions .spacer{flex:1}
+  .status{font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .status.err{color:var(--danger)}
+  .go{
+    font:inherit;font-weight:600;font-size:15px;color:#fff;background:var(--accent);
+    border:none;border-radius:11px;padding:13px 26px;cursor:pointer;
+    box-shadow:0 4px 14px rgba(14,124,102,.3);transition:.15s;
+  }
+  .go:hover:not(:disabled){background:var(--accent-ink);transform:translateY(-1px)}
+  .go:disabled{background:var(--line-strong);box-shadow:none;cursor:not-allowed}
+
+  .hint{margin-top:14px;font-size:12.5px;color:var(--faint);text-align:center}
+
+  @media (max-width:560px){
+    h1{font-size:27px}
+    .grid{grid-template-columns:repeat(auto-fill,minmax(92px,1fr))}
+    body{padding:22px 14px 90px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">本地处理 · 不上传服务器</div>
+    <h1>PDF 拆页台</h1>
+    <p class="sub">上传一个 PDF,按单页挑选或按页码范围拆分。所有处理都在你的浏览器里完成,文件不会发送到任何服务器。</p>
+  </header>
+
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="选择 PDF 文件">
+    <div class="glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    </div>
+    <h2>把 PDF 拖到这里,或点击选择</h2>
+    <p>支持任意页数的单个 PDF 文件</p>
+    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="bar">
+      <div class="fileinfo">
+        <div class="doticon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        </div>
+        <div class="fmeta">
+          <div class="fname" id="fname">—</div>
+          <div class="fcount" id="fcount">—</div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="modes">
+        <button id="mSingle" class="active" data-mode="single">单页拆分</button>
+        <button id="mRange" data-mode="range">范围拆分</button>
+      </div>
+      <button class="ghost" id="reset">换一个文件</button>
+    </div>
+
+    <!-- Single mode -->
+    <div class="panel" id="panelSingle">
+      <div class="picktools">
+        <span class="chiplabel">快速选择</span>
+        <button class="minibtn" data-pick="all">全选</button>
+        <button class="minibtn" data-pick="none">全不选</button>
+        <button class="minibtn" data-pick="odd">奇数页</button>
+        <button class="minibtn" data-pick="even">偶数页</button>
+        <button class="minibtn" data-pick="invert">反选</button>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <!-- Range mode -->
+    <div class="panel hide" id="panelRange">
+      <div class="ranges" id="ranges"></div>
+      <button class="addrange" id="addRange">+ 添加一个范围</button>
+    </div>
+
+    <div class="actions">
+      <label class="mergeopt"><input type="checkbox" id="merge"><span id="mergeLabel">合并为单个 PDF</span></label>
+      <div class="spacer"></div>
+      <div class="status" id="status"></div>
+      <button class="go" id="go" disabled>导出</button>
+    </div>
+    <div class="hint">导出多个文件时会自动打包成一个 .zip。</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const pdfjsLib = window.pdfjsLib;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const { PDFDocument } = PDFLib;
+
+  const el = id => document.getElementById(id);
+  const drop = el("drop"), fileInput = el("file"), stage = el("stage");
+  const fnameEl = el("fname"), fcountEl = el("fcount");
+  const gridEl = el("grid"), rangesEl = el("ranges");
+  const statusEl = el("status"), goBtn = el("go"), mergeBox = el("merge"), mergeLabel = el("mergeLabel");
+
+  let state = {
+    fileName: "",
+    baseName: "",
+    bytes: null,        // ArrayBuffer of original file
+    srcDoc: null,       // pdf-lib document
+    pdfjs: null,        // pdf.js document
+    pageCount: 0,
+    selected: new Set(),// 0-based indices (single mode)
+    mode: "single",
+    rangeRows: [],      // {id, from, to}
+    rid: 1,
+  };
+  let observer = null;
+
+  /* ---------- File loading ---------- */
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){e.preventDefault();fileInput.click();} });
+  fileInput.addEventListener("change", e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+  ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault();drop.classList.add("drag");}));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault();drop.classList.remove("drag");}));
+  drop.addEventListener("drop", e => {
+    const f = e.dataTransfer.files[0];
+    if(f) loadFile(f);
+  });
+  el("reset").addEventListener("click", resetAll);
+
+  async function loadFile(file){
+    if(file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")){
+      alert("请选择一个 PDF 文件。");
+      return;
+    }
+    setStatus("正在读取文件…");
+    try{
+      const buf = await file.arrayBuffer();
+      state.bytes = buf;
+      state.fileName = file.name;
+      state.baseName = file.name.replace(/\.pdf$/i, "");
+
+      // pdf-lib (for splitting) — load on its own copy
+      state.srcDoc = await PDFDocument.load(buf.slice(0));
+      // pdf.js (for thumbnails) — needs its own copy too
+      state.pdfjs = await pdfjsLib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
+      state.pageCount = state.pdfjs.numPages;
+
+      fnameEl.textContent = file.name;
+      fcountEl.textContent = state.pageCount + " 页 · " + formatSize(file.size);
+
+      // default: all pages selected in single mode
+      state.selected = new Set(Array.from({length: state.pageCount}, (_, i) => i));
+      state.rangeRows = [{ id: state.rid++, from: 1, to: state.pageCount }];
+
+      buildGrid();
+      buildRanges();
+      stage.classList.add("on");
+      drop.style.display = "none";
+      setStatus("");
+      updateGo();
+    }catch(err){
+      console.error(err);
+      setStatus("无法读取这个 PDF,文件可能已损坏或加密。", true);
+    }
+  }
+
+  function resetAll(){
+    if(observer) observer.disconnect();
+    state = { fileName:"", baseName:"", bytes:null, srcDoc:null, pdfjs:null, pageCount:0,
+              selected:new Set(), mode:"single", rangeRows:[], rid:1 };
+    gridEl.innerHTML = ""; rangesEl.innerHTML = "";
+    stage.classList.remove("on");
+    drop.style.display = "block";
+    fileInput.value = "";
+    setMode("single");
+    setStatus("");
+  }
+
+  /* ---------- Page grid (single mode) ---------- */
+  function buildGrid(){
+    gridEl.innerHTML = "";
+    if(observer) observer.disconnect();
+    observer = new IntersectionObserver(entries => {
+      entries.forEach(en => {
+        if(en.isIntersecting){
+          renderThumb(en.target);
+          observer.unobserve(en.target);
+        }
+      });
+    }, { rootMargin: "300px" });
+
+    for(let i = 0; i < state.pageCount; i++){
+      const card = document.createElement("button");
+      card.className = "pagecard" + (state.selected.has(i) ? " sel" : "");
+      card.dataset.idx = i;
+      card.innerHTML =
+        '<span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>' +
+        '<span class="thumb"><span class="ph">第 ' + (i+1) + ' 页</span></span>' +
+        '<span class="num">' + String(i+1).padStart(2,"0") + '</span>';
+      card.addEventListener("click", () => togglePage(i, card));
+      gridEl.appendChild(card);
+      observer.observe(card);
+    }
+  }
+
+  async function renderThumb(card){
+    if(card.dataset.rendered) return;
+    card.dataset.rendered = "1";
+    const idx = parseInt(card.dataset.idx, 10);
+    try{
+      const page = await state.pdfjs.getPage(idx + 1);
+      const base = page.getViewport({ scale: 1 });
+      const scale = 220 / base.width;
+      const vp = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(vp.width);
+      canvas.height = Math.ceil(vp.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+      const thumb = card.querySelector(".thumb");
+      thumb.innerHTML = "";
+      thumb.appendChild(canvas);
+    }catch(e){ /* leave placeholder */ }
+  }
+
+  function togglePage(i, card){
+    if(state.selected.has(i)) state.selected.delete(i);
+    else state.selected.add(i);
+    card.classList.toggle("sel", state.selected.has(i));
+    updateGo();
+  }
+
+  document.querySelectorAll("[data-pick]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const mode = btn.dataset.pick;
+      const cur = state.selected;
+      if(mode === "all") state.selected = new Set(range0(state.pageCount));
+      else if(mode === "none") state.selected = new Set();
+      else if(mode === "odd") state.selected = new Set(range0(state.pageCount).filter(i => (i+1)%2===1));
+      else if(mode === "even") state.selected = new Set(range0(state.pageCount).filter(i => (i+1)%2===0));
+      else if(mode === "invert") state.selected = new Set(range0(state.pageCount).filter(i => !cur.has(i)));
+      syncGridSelection();
+      updateGo();
+    });
+  });
+  function syncGridSelection(){
+    gridEl.querySelectorAll(".pagecard").forEach(c => {
+      c.classList.toggle("sel", state.selected.has(parseInt(c.dataset.idx,10)));
+    });
+  }
+
+  /* ---------- Range mode ---------- */
+  el("addRange").addEventListener("click", () => {
+    state.rangeRows.push({ id: state.rid++, from: 1, to: state.pageCount });
+    buildRanges();
+    updateGo();
+  });
+
+  function buildRanges(){
+    rangesEl.innerHTML = "";
+    state.rangeRows.forEach((r, i) => {
+      const row = document.createElement("div");
+      row.className = "rangerow";
+      row.dataset.id = r.id;
+      row.innerHTML =
+        '<span class="idx">' + String(i+1).padStart(2,"0") + '</span>' +
+        '<span class="field"><label>从</label><input type="number" class="from" min="1" max="'+state.pageCount+'" value="'+r.from+'"></span>' +
+        '<span class="field"><label>到</label><input type="number" class="to" min="1" max="'+state.pageCount+'" value="'+r.to+'"></span>' +
+        '<span class="outname"></span>' +
+        '<button class="del" title="删除">×</button>';
+      const fromI = row.querySelector(".from"), toI = row.querySelector(".to");
+      const upd = () => {
+        r.from = parseInt(fromI.value,10);
+        r.to = parseInt(toI.value,10);
+        validateAndName(row, r);
+        updateGo();
+      };
+      fromI.addEventListener("input", upd);
+      toI.addEventListener("input", upd);
+      row.querySelector(".del").addEventListener("click", () => {
+        state.rangeRows = state.rangeRows.filter(x => x.id !== r.id);
+        buildRanges(); updateGo();
+      });
+      rangesEl.appendChild(row);
+      validateAndName(row, r);
+    });
+  }
+
+  function validateAndName(row, r){
+    const valid = rangeValid(r);
+    row.classList.toggle("bad", !valid);
+    const out = row.querySelector(".outname");
+    if(valid){
+      out.textContent = state.baseName + (r.from===r.to ? "_第"+r.from+"页" : "_第"+r.from+"-"+r.to+"页") + ".pdf";
+    }else{
+      out.textContent = "页码无效";
+    }
+  }
+  function rangeValid(r){
+    return Number.isInteger(r.from) && Number.isInteger(r.to) &&
+           r.from>=1 && r.to>=r.from && r.to<=state.pageCount;
+  }
+
+  /* ---------- Mode switching ---------- */
+  document.querySelectorAll(".modes button").forEach(b =>
+    b.addEventListener("click", () => setMode(b.dataset.mode)));
+  function setMode(mode){
+    state.mode = mode;
+    el("mSingle").classList.toggle("active", mode==="single");
+    el("mRange").classList.toggle("active", mode==="range");
+    el("panelSingle").classList.toggle("hide", mode!=="single");
+    el("panelRange").classList.toggle("hide", mode!=="range");
+    mergeLabel.textContent = mode==="single" ? "合并所选页为单个 PDF" : "合并所有范围为单个 PDF";
+    updateGo();
+  }
+
+  /* ---------- Export ---------- */
+  function updateGo(){
+    let n = 0, ok = true;
+    if(state.mode === "single"){
+      n = state.selected.size;
+      ok = n > 0;
+    }else{
+      ok = state.rangeRows.length>0 && state.rangeRows.every(rangeValid);
+      n = state.rangeRows.length;
+    }
+    const merge = mergeBox.checked;
+    goBtn.disabled = !ok || !state.srcDoc;
+    if(!ok){ goBtn.textContent = "导出"; return; }
+    if(merge) goBtn.textContent = "导出 1 个文件";
+    else goBtn.textContent = "导出 " + n + " 个文件";
+  }
+  mergeBox.addEventListener("change", updateGo);
+
+  goBtn.addEventListener("click", doExport);
+
+  async function makePdf(indices){ // indices: 0-based array
+    const out = await PDFDocument.create();
+    const pages = await out.copyPages(state.srcDoc, indices);
+    pages.forEach(p => out.addPage(p));
+    return await out.save();
+  }
+
+  async function doExport(){
+    goBtn.disabled = true;
+    setStatus("正在拆分…");
+    try{
+      const merge = mergeBox.checked;
+      const jobs = []; // {name, indices}
+
+      if(state.mode === "single"){
+        const sel = Array.from(state.selected).sort((a,b)=>a-b);
+        if(merge){
+          jobs.push({ name: state.baseName + "_所选" + sel.length + "页.pdf", indices: sel });
+        }else{
+          sel.forEach(i => jobs.push({ name: state.baseName + "_第" + (i+1) + "页.pdf", indices: [i] }));
+        }
+      }else{
+        if(merge){
+          let all = [];
+          state.rangeRows.forEach(r => { for(let p=r.from; p<=r.to; p++) all.push(p-1); });
+          jobs.push({ name: state.baseName + "_合并.pdf", indices: all });
+        }else{
+          state.rangeRows.forEach(r => {
+            const idx = [];
+            for(let p=r.from; p<=r.to; p++) idx.push(p-1);
+            const nm = r.from===r.to ? "_第"+r.from+"页" : "_第"+r.from+"-"+r.to+"页";
+            jobs.push({ name: state.baseName + nm + ".pdf", indices: idx });
+          });
+        }
+      }
+
+      if(jobs.length === 1){
+        const bytes = await makePdf(jobs[0].indices);
+        downloadBlob(new Blob([bytes], {type:"application/pdf"}), jobs[0].name);
+        setStatus("已导出 " + jobs[0].name);
+      }else{
+        const zip = new JSZip();
+        for(let k=0; k<jobs.length; k++){
+          setStatus("正在拆分… " + (k+1) + "/" + jobs.length);
+          const bytes = await makePdf(jobs[k].indices);
+          zip.file(jobs[k].name, bytes);
+        }
+        setStatus("正在打包 .zip…");
+        const blob = await zip.generateAsync({ type:"blob" });
+        downloadBlob(blob, state.baseName + "_拆分_" + jobs.length + "个文件.zip");
+        setStatus("已导出 " + jobs.length + " 个文件(.zip)");
+      }
+    }catch(err){
+      console.error(err);
+      setStatus("拆分失败:" + (err.message||err), true);
+    }finally{
+      updateGo();
+    }
+  }
+
+  /* ---------- Helpers ---------- */
+  function downloadBlob(blob, name){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  function range0(n){ return Array.from({length:n}, (_, i) => i); }
+  function formatSize(b){
+    if(b < 1024) return b + " B";
+    if(b < 1048576) return (b/1024).toFixed(0) + " KB";
+    return (b/1048576).toFixed(1) + " MB";
+  }
+  function setStatus(msg, err){
+    statusEl.textContent = msg || "";
+    statusEl.classList.toggle("err", !!err);
+  }
+})();
+</script>
+</body>
+</html>

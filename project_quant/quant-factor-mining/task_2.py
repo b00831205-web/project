@@ -1,8 +1,39 @@
 import pandas as pd
 import os
+import argparse
 
-if "__name__"=="__main__":
-    df = pd.DataFrame(pd.read_parquet("/tmp/raw_data.parquet"))
-    df = df.ffill(inplace = True)
-    df.to_parquet("/tmp/proceed_data.parquet")
-    os.remove("/tmp/raw_data.parquet")
+if __name__ == "__main__":
+    parse = argparse.ArgumentParser(description="clean and merge raw data")
+    parse.add_argument("--date", type=str, required=True)
+    parse.add_argument("--batch", type=str, required=True)
+    args = parse.parse_args()
+
+    tmp_dir = os.path.join(os.getcwd(), "tmp")
+
+    # 定义一个处理函数，避免 close/volume 重复写两遍
+    def process(raw_name, final_name):
+        raw_path = os.path.join(tmp_dir, raw_name)
+        final_path = os.path.join(tmp_dir, final_name)
+
+        if not os.path.exists(raw_path):
+            print(f"[{args.batch}] {raw_name} 无新数据，跳过")
+            return
+
+        new_data = pd.read_parquet(raw_path)
+        new_data = new_data.ffill()
+
+        if os.path.exists(final_path):
+            existing = pd.read_parquet(final_path)
+            combined = pd.concat([existing, new_data])
+            combined = combined[~combined.index.duplicated(keep="last")]
+            combined = combined.sort_index()
+        else:
+            combined = new_data
+
+        combined.to_parquet(final_path)
+        os.remove(raw_path)
+        print(f"[{args.batch}] {final_name} 合并完成")
+
+    # 分别处理 close 和 volume
+    process("raw_close.parquet", "close.parquet")
+    process("raw_volume.parquet", "volume.parquet")
