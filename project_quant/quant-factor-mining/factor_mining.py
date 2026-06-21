@@ -72,14 +72,14 @@ def momentum(df: pd.DataFrame, tickers: list, day:int =2) -> pd.DataFrame:
     for ticker in tickers:
         current_price=df[ticker]
         start_price=df[ticker].shift(day-1)
-        mmt[f"momentum_{ticker}"]=(start_price-current_price)/start_price
+        mmt[f"{day}DayMomentum_{ticker}"]=(current_price-start_price)/start_price
     return mmt
     
 def EWMA(window_data, wk: float)->float: #做.apply()时由于切分下来的nparray会直接传入第一个参数，因此要把window_data写在最前面
     ewma=0
     period = len(window_data)
     for i in range(period):
-        ewma += wk**(i-1)*window_data[period-i-1]
+        ewma += wk**(i)*window_data[period-i-1]
     return ewma
 
 def ShortTermReversal(excess_return: pd.DataFrame,tickers: list, halflife: int, period: int)->pd.DataFrame:

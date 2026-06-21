@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF 笔记工坊</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<style>
+  :root{
+    --paper:#EBEDF1;
+    --surface:#FFFFFF;
+    --ink:#15191F;
+    --muted:#6A727E;
+    --faint:#9AA2AD;
+    --line:#D6DAE1;
+    --line-strong:#C2C8D1;
+    --accent:#0E7C66;
+    --accent-ink:#0A5C4C;
+    --accent-soft:#D8EDE7;
+    --mark:#B4532A;
+    --mark-soft:#F3E2D9;
+    --danger:#B23A48;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(21,25,31,.05),0 8px 24px rgba(21,25,31,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper);color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+    padding:32px 20px 80px;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+
+  /* Header */
+  header{margin-bottom:24px}
+  .kicker{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:10px}
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;line-height:1.05;letter-spacing:-.02em;margin:0 0 10px}
+  .sub{color:var(--muted);max-width:64ch;margin:0}
+
+  /* Drop zone */
+  .drop{position:relative;margin-top:24px;background:var(--surface);border:1.5px dashed var(--line-strong);border-radius:var(--radius);padding:54px 28px;text-align:center;cursor:pointer;transition:border-color .18s,background .18s,transform .18s;overflow:hidden}
+  .drop::after{content:"";position:absolute;top:0;right:0;border-width:0 28px 28px 0;border-style:solid;border-color:transparent var(--paper) transparent transparent;transition:border-width .18s}
+  .drop:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .drop:hover::after{border-width:0 34px 34px 0}
+  .drop.drag{border-color:var(--accent);background:var(--accent-soft)}
+  .drop h2{font-family:'Space Grotesk',sans-serif;font-size:18px;margin:14px 0 6px;font-weight:600}
+  .drop p{color:var(--muted);margin:0;font-size:13px}
+  .drop .glyph{width:46px;height:46px;margin:0 auto;display:grid;place-items:center;border-radius:11px;background:var(--accent-soft);color:var(--accent-ink)}
+  .drop .glyph svg{width:24px;height:24px}
+
+  .stage{display:none}
+  .stage.on{display:block}
+
+  .bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px;margin-top:24px;box-shadow:var(--shadow)}
+  .fileinfo{display:flex;align-items:center;gap:12px;min-width:0}
+  .fileinfo .doticon{width:36px;height:36px;flex:none;border-radius:9px;background:var(--mark-soft);color:var(--mark);display:grid;place-items:center}
+  .fileinfo .doticon svg{width:19px;height:19px}
+  .fmeta{min-width:0}
+  .fname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42ch}
+  .fcount{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted)}
+  .bar .spacer{flex:1}
+  .ghost{background:none;border:1px solid var(--line-strong);color:var(--ink);font:inherit;font-size:13px;padding:8px 14px;border-radius:9px;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+  .ghost:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .ghost:disabled{opacity:.5;cursor:not-allowed}
+
+  /* Two columns */
+  .cols{display:grid;grid-template-columns:1.05fr 1fr;gap:20px;margin-top:22px}
+  @media (max-width:880px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 20px;box-shadow:var(--shadow)}
+  .step{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:14px}
+  .step .n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--accent-soft);color:var(--accent-ink)}
+
+  /* Page picker */
+  .specrow{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .specrow label{font-size:13px;color:var(--muted);white-space:nowrap}
+  .specrow input{flex:1;font:inherit;font-family:'JetBrains Mono',monospace;font-size:14px;padding:9px 11px;border:1px solid var(--line-strong);border-radius:9px;background:var(--paper);color:var(--ink)}
+  .specrow input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+  .specrow input.bad{border-color:var(--danger)}
+  .picktools{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+  .picktools .chiplabel{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-right:2px}
+  .minibtn{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--surface);padding:6px 11px;border-radius:8px;cursor:pointer;color:var(--ink);transition:.15s}
+  .minibtn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px;max-height:430px;overflow:auto;padding:2px}
+  .pagecard{position:relative;background:var(--surface);border:1.5px solid var(--line);border-radius:11px;padding:8px;cursor:pointer;text-align:center;transition:border-color .15s,transform .12s,box-shadow .15s;font:inherit}
+  .pagecard:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--line-strong)}
+  .pagecard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .pagecard.sel{border-color:var(--accent);background:var(--accent-soft)}
+  .pagecard .thumb{width:100%;aspect-ratio:3/4;background:var(--paper);border-radius:5px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--line)}
+  .pagecard canvas{max-width:100%;max-height:100%;display:block;background:#fff}
+  .pagecard .ph{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--faint)}
+  .pagecard .num{margin-top:7px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--muted)}
+  .pagecard.sel .num{color:var(--accent-ink)}
+  .pagecard .tick{position:absolute;top:6px;right:6px;width:19px;height:19px;border-radius:50%;background:var(--accent);color:#fff;display:none;place-items:center}
+  .pagecard .tick svg{width:11px;height:11px}
+  .pagecard.sel .tick{display:grid}
+
+  /* Config */
+  .fld{margin-bottom:16px}
+  .fld:last-child{margin-bottom:0}
+  .fld > .lbl{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:8px;display:block}
+  .fld > .lbl .hint{font-weight:400;color:var(--faint);font-size:12px;margin-left:6px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font:inherit;font-size:13px;border:1px solid var(--line-strong);background:var(--paper);color:var(--muted);padding:7px 12px;border-radius:999px;cursor:pointer;transition:.14s;user-select:none}
+  .chip:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink);font-weight:500}
+  .segmented{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px;flex-wrap:wrap}
+  .segmented button{font:inherit;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;padding:6px 14px;border-radius:7px;color:var(--muted);transition:.15s}
+  .segmented button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .selstyle{width:100%;font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line-strong);border-radius:9px;background:var(--paper);color:var(--ink);cursor:pointer}
+  .selstyle:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+  textarea.ta{width:100%;font:inherit;font-size:13.5px;line-height:1.55;padding:10px 12px;border:1px solid var(--line-strong);border-radius:9px;background:var(--paper);color:var(--ink);resize:vertical;min-height:64px}
+  textarea.ta:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+
+  /* Action footer */
+  .actions{position:sticky;bottom:0;margin-top:22px;background:linear-gradient(to top,var(--paper) 72%,transparent);padding-top:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .actions .spacer{flex:1}
+  .status{font-size:13px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .status.err{color:var(--danger)}
+  .go{font:inherit;font-weight:600;font-size:15px;color:#fff;background:var(--accent);border:none;border-radius:11px;padding:13px 26px;cursor:pointer;box-shadow:0 4px 14px rgba(14,124,102,.3);transition:.15s;display:inline-flex;align-items:center;gap:9px}
+  .go:hover:not(:disabled){background:var(--accent-ink);transform:translateY(-1px)}
+  .go:disabled{background:var(--line-strong);box-shadow:none;cursor:not-allowed}
+  .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:none}
+  .go.busy .spin{display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* Output */
+  .out{margin-top:24px;display:none}
+  .out.on{display:block}
+  .outhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .outhead .step{margin-bottom:0}
+  .outhead .spacer{flex:1}
+  .note{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:30px 34px;box-shadow:var(--shadow);overflow-x:auto}
+  .note h1,.note h2,.note h3{font-family:'Space Grotesk',sans-serif;letter-spacing:-.01em;line-height:1.2}
+  .note h1{font-size:25px;margin:.2em 0 .55em;padding-bottom:.3em;border-bottom:2px solid var(--line)}
+  .note h2{font-size:20px;margin:1.5em 0 .5em;color:var(--accent-ink)}
+  .note h3{font-size:16.5px;margin:1.2em 0 .4em}
+  .note p{margin:.6em 0}
+  .note ul,.note ol{margin:.5em 0;padding-left:1.5em}
+  .note li{margin:.25em 0}
+  .note code{font-family:'JetBrains Mono',monospace;font-size:.86em;background:var(--paper);padding:.12em .4em;border-radius:5px;border:1px solid var(--line)}
+  .note pre{background:#12161c;color:#e6edf3;padding:14px 16px;border-radius:10px;overflow-x:auto;font-size:13px}
+  .note pre code{background:none;border:none;color:inherit;padding:0}
+  .note blockquote{margin:.7em 0;padding:.4em 1em;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;color:var(--accent-ink)}
+  .note table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:14px}
+  .note th,.note td{border:1px solid var(--line);padding:7px 11px;text-align:left}
+  .note th{background:var(--paper);font-weight:600}
+  .note hr{border:none;border-top:1px solid var(--line);margin:1.4em 0}
+  .note .katex-display{margin:.7em 0;overflow-x:auto;overflow-y:hidden}
+  .truncnote{display:none;margin-top:12px;font-size:12.5px;color:var(--mark);background:var(--mark-soft);border:1px solid #e7cbbc;border-radius:9px;padding:9px 12px}
+  .truncnote.on{display:block}
+
+  .hint{margin-top:14px;font-size:12.5px;color:var(--faint);text-align:center}
+  @media (max-width:560px){h1{font-size:27px}body{padding:22px 14px 90px}.note{padding:22px 18px}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">本地拆分 · 在 Claude 内生成笔记</div>
+    <h1>PDF 笔记工坊</h1>
+    <p class="sub">上传一个 PDF，挑出你要的页码，配置笔记的内容与风格，让 Claude 直接把这些页读成学习笔记。拆分在浏览器本地完成；生成笔记时只把你选中的那几页发给模型。</p>
+  </header>
+
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="选择 PDF 文件">
+    <div class="glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    </div>
+    <h2>把 PDF 拖到这里，或点击选择</h2>
+    <p>支持任意页数的单个 PDF 文件</p>
+    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="bar">
+      <div class="fileinfo">
+        <div class="doticon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        </div>
+        <div class="fmeta">
+          <div class="fname" id="fname">—</div>
+          <div class="fcount" id="fcount">—</div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <button class="ghost" id="reset">换一个文件</button>
+    </div>
+
+    <div class="cols">
+      <!-- STEP 1: pages -->
+      <div class="card">
+        <div class="step"><span class="n">1</span>选择页码</div>
+        <div class="specrow">
+          <label for="spec">具体页码</label>
+          <input id="spec" type="text" placeholder="例如 3-7, 12, 15-20" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="picktools">
+          <span class="chiplabel">快速选择</span>
+          <button class="minibtn" data-pick="all">全选</button>
+          <button class="minibtn" data-pick="none">全不选</button>
+          <button class="minibtn" data-pick="odd">奇数页</button>
+          <button class="minibtn" data-pick="even">偶数页</button>
+          <button class="minibtn" data-pick="invert">反选</button>
+        </div>
+        <div class="grid" id="grid"></div>
+      </div>
+
+      <!-- STEP 2: config -->
+      <div class="card">
+        <div class="step"><span class="n">2</span>配置笔记</div>
+
+        <div class="fld">
+          <span class="lbl">包含哪些板块<span class="hint">点亮 = 包含</span></span>
+          <div class="chips" id="chips"></div>
+        </div>
+
+        <div class="fld">
+          <span class="lbl">输出语言</span>
+          <div class="segmented" id="langSeg">
+            <button class="on" data-v="bi">中英双语</button>
+            <button data-v="zh">中文</button>
+            <button data-v="en">English</button>
+          </div>
+        </div>
+
+        <div class="fld">
+          <span class="lbl">详细程度</span>
+          <div class="segmented" id="verbSeg">
+            <button data-v="lean">精简</button>
+            <button class="on" data-v="std">标准</button>
+            <button data-v="rich">详尽</button>
+          </div>
+        </div>
+
+        <div class="fld">
+          <span class="lbl">风格预设</span>
+          <select class="selstyle" id="preset">
+            <option value="default" selected>双语学习笔记（一句话主旨·公式速查·分块·面试问答）</option>
+            <option value="minimal">极简要点（bullet 为主）</option>
+            <option value="deep">深度精读（重推导与直觉）</option>
+            <option value="interview">面试备战（考点 + 问答）</option>
+            <option value="custom">纯净自定义（只听下面两栏）</option>
+          </select>
+        </div>
+
+        <div class="fld">
+          <span class="lbl">风格样本<span class="hint">粘贴一段你以前的笔记，照着它写</span></span>
+          <textarea class="ta" id="sample" placeholder="可留空。贴进来后，Claude 会模仿这段笔记的结构、排版、术语习惯和语气——这是“按你的历史风格来写”的入口（它读不到聊天记录，所以用样本来锚定）。"></textarea>
+        </div>
+
+        <div class="fld">
+          <span class="lbl">额外要求<span class="hint">可选</span></span>
+          <textarea class="ta" id="custom" placeholder="例如：每节末尾加一道自测题；保留原文公式编号；用 Shreve 的记号；侧重 IC/IR 的直觉……"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="ghost" id="dlsplit">下载拆分后的 PDF</button>
+      <div class="spacer"></div>
+      <div class="status" id="status"></div>
+      <button class="go" id="go" disabled><span class="spin"></span><span id="goLabel">生成笔记</span></button>
+    </div>
+    <div class="hint">拆分在你的浏览器里完成，文件不上传。生成笔记需要在 Claude 应用内运行本工具。</div>
+
+    <!-- STEP 3: output -->
+    <div class="out" id="out">
+      <div class="outhead">
+        <div class="step"><span class="n">3</span>笔记</div>
+        <div class="spacer"></div>
+        <button class="ghost" id="continueBtn">继续生成</button>
+        <button class="ghost" id="regenBtn">重新生成</button>
+        <button class="ghost" id="copyBtn">复制 Markdown</button>
+        <button class="ghost" id="dlmdBtn">下载 .md</button>
+      </div>
+      <div class="note" id="note"></div>
+      <div class="truncnote" id="truncnote">这一段写到长度上限就停了。点「继续生成」从断点接着写。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const pdfjsLib = window.pdfjsLib;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const { PDFDocument } = PDFLib;
+  const el = id => document.getElementById(id);
+
+  const drop=el("drop"), fileInput=el("file"), stage=el("stage");
+  const fnameEl=el("fname"), fcountEl=el("fcount");
+  const gridEl=el("grid"), specEl=el("spec");
+  const statusEl=el("status"), goBtn=el("go"), goLabel=el("goLabel");
+  const outEl=el("out"), noteEl=el("note"), truncEl=el("truncnote");
+
+  // Content sections — toggle on/off
+  const CONTENT = [
+    {id:"thesis",  label:"一句话主旨", on:true},
+    {id:"formula", label:"公式速查表", on:true},
+    {id:"sections",label:"主题分块精读", on:true},
+    {id:"proof",   label:"关键推导/证明", on:false},
+    {id:"qa",      label:"面试问答", on:true},
+    {id:"glossary",label:"术语表", on:false},
+    {id:"pitfall", label:"易错点/注意", on:false},
+    {id:"summary", label:"本页小结", on:false},
+  ];
+
+  let state = {
+    fileName:"", baseName:"", bytes:null, srcDoc:null, pdfjs:null, pageCount:0,
+    selected:new Set(),           // 0-based
+    lang:"bi", verb:"std", preset:"default",
+    conversation:null,            // messages array for continue
+    noteMd:"",                    // accumulated markdown
+    busy:false,
+  };
+  let observer=null;
+
+  /* ---------- File loading ---------- */
+  drop.addEventListener("click", ()=>fileInput.click());
+  drop.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();fileInput.click();} });
+  fileInput.addEventListener("change", e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));
+  drop.addEventListener("drop", e=>{ const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+  el("reset").addEventListener("click", resetAll);
+
+  async function loadFile(file){
+    if(file.type!=="application/pdf" && !file.name.toLowerCase().endsWith(".pdf")){ alert("请选择一个 PDF 文件。"); return; }
+    setStatus("正在读取文件…");
+    try{
+      const buf = await file.arrayBuffer();
+      state.bytes=buf; state.fileName=file.name; state.baseName=file.name.replace(/\.pdf$/i,"");
+      state.srcDoc = await PDFDocument.load(buf.slice(0));
+      state.pdfjs  = await pdfjsLib.getDocument({ data:new Uint8Array(buf.slice(0)) }).promise;
+      state.pageCount = state.pdfjs.numPages;
+
+      fnameEl.textContent=file.name;
+      fcountEl.textContent=state.pageCount+" 页 · "+formatSize(file.size);
+
+      state.selected = new Set(range0(state.pageCount));
+      buildChips(); buildGrid(); syncSpecFromSelection();
+      stage.classList.add("on"); drop.style.display="none";
+      outEl.classList.remove("on"); state.conversation=null; state.noteMd="";
+      setStatus(""); updateGo();
+    }catch(err){ console.error(err); setStatus("无法读取这个 PDF，文件可能已损坏或加密。", true); }
+  }
+
+  function resetAll(){
+    if(observer) observer.disconnect();
+    state = { fileName:"",baseName:"",bytes:null,srcDoc:null,pdfjs:null,pageCount:0,
+              selected:new Set(),lang:state.lang,verb:state.verb,preset:state.preset,
+              conversation:null,noteMd:"",busy:false };
+    gridEl.innerHTML=""; specEl.value="";
+    stage.classList.remove("on"); outEl.classList.remove("on");
+    drop.style.display="block"; fileInput.value=""; setStatus("");
+  }
+
+  /* ---------- Config chips & segmented ---------- */
+  function buildChips(){
+    const c=el("chips"); c.innerHTML="";
+    CONTENT.forEach(item=>{
+      const b=document.createElement("button");
+      b.className="chip"+(item.on?" on":""); b.textContent=item.label; b.type="button";
+      b.addEventListener("click", ()=>{ item.on=!item.on; b.classList.toggle("on",item.on); });
+      c.appendChild(b);
+    });
+  }
+  el("langSeg").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+    state.lang=b.dataset.v; el("langSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+  }));
+  el("verbSeg").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+    state.verb=b.dataset.v; el("verbSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+  }));
+  el("preset").addEventListener("change", e=>{ state.preset=e.target.value; });
+
+  /* ---------- Page grid ---------- */
+  function buildGrid(){
+    gridEl.innerHTML="";
+    if(observer) observer.disconnect();
+    observer = new IntersectionObserver(entries=>{
+      entries.forEach(en=>{ if(en.isIntersecting){ renderThumb(en.target); observer.unobserve(en.target); } });
+    }, { root:gridEl, rootMargin:"300px" });
+    for(let i=0;i<state.pageCount;i++){
+      const card=document.createElement("button");
+      card.className="pagecard"+(state.selected.has(i)?" sel":"");
+      card.dataset.idx=i; card.type="button";
+      card.innerHTML=
+        '<span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>'+
+        '<span class="thumb"><span class="ph">第 '+(i+1)+' 页</span></span>'+
+        '<span class="num">'+String(i+1).padStart(2,"0")+'</span>';
+      card.addEventListener("click", ()=>togglePage(i,card));
+      gridEl.appendChild(card); observer.observe(card);
+    }
+  }
+  async function renderThumb(card){
+    if(card.dataset.rendered) return; card.dataset.rendered="1";
+    const idx=parseInt(card.dataset.idx,10);
+    try{
+      const page=await state.pdfjs.getPage(idx+1);
+      const base=page.getViewport({scale:1});
+      const scale=200/base.width;
+      const vp=page.getViewport({scale});
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.ceil(vp.width); canvas.height=Math.ceil(vp.height);
+      await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
+      const thumb=card.querySelector(".thumb"); thumb.innerHTML=""; thumb.appendChild(canvas);
+    }catch(e){/* keep placeholder */}
+  }
+  function togglePage(i,card){
+    if(state.selected.has(i)) state.selected.delete(i); else state.selected.add(i);
+    card.classList.toggle("sel", state.selected.has(i));
+    syncSpecFromSelection(); updateGo();
+  }
+  function syncGridSelection(){
+    gridEl.querySelectorAll(".pagecard").forEach(c=>{
+      c.classList.toggle("sel", state.selected.has(parseInt(c.dataset.idx,10)));
+    });
+  }
+  document.querySelectorAll("[data-pick]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const m=btn.dataset.pick, cur=state.selected;
+      if(m==="all") state.selected=new Set(range0(state.pageCount));
+      else if(m==="none") state.selected=new Set();
+      else if(m==="odd") state.selected=new Set(range0(state.pageCount).filter(i=>(i+1)%2===1));
+      else if(m==="even") state.selected=new Set(range0(state.pageCount).filter(i=>(i+1)%2===0));
+      else if(m==="invert") state.selected=new Set(range0(state.pageCount).filter(i=>!cur.has(i)));
+      syncGridSelection(); syncSpecFromSelection(); updateGo();
+    });
+  });
+
+  /* ---------- Spec text <-> selection ---------- */
+  specEl.addEventListener("input", ()=>{
+    const parsed = parseSpec(specEl.value, state.pageCount);
+    if(parsed===null){ specEl.classList.add("bad"); return; }
+    specEl.classList.remove("bad");
+    state.selected = new Set(parsed);
+    syncGridSelection(); updateGo();
+  });
+  function parseSpec(str, max){
+    const s=str.trim();
+    if(s==="") return [];
+    const out=new Set();
+    const tokens=s.split(/[,，、]/).map(t=>t.trim()).filter(Boolean);
+    for(const tk of tokens){
+      const m=tk.match(/^(\d+)\s*(?:[-–~到]\s*(\d+))?$/);
+      if(!m) return null;
+      let a=parseInt(m[1],10);
+      let b=m[2]!==undefined?parseInt(m[2],10):a;
+      if(b<a){ const t=a;a=b;b=t; }
+      if(a<1||b>max) return null;
+      for(let p=a;p<=b;p++) out.add(p-1);
+    }
+    return Array.from(out).sort((x,y)=>x-y);
+  }
+  function syncSpecFromSelection(){
+    specEl.classList.remove("bad");
+    specEl.value = compressRanges(Array.from(state.selected).sort((a,b)=>a-b));
+  }
+  function compressRanges(sorted){ // 0-based -> "3-7, 12" (1-based)
+    if(sorted.length===0) return "";
+    const parts=[]; let s=sorted[0], p=sorted[0];
+    for(let i=1;i<sorted.length;i++){
+      if(sorted[i]===p+1){ p=sorted[i]; continue; }
+      parts.push(s===p?(s+1):((s+1)+"-"+(p+1))); s=sorted[i]; p=sorted[i];
+    }
+    parts.push(s===p?(s+1):((s+1)+"-"+(p+1)));
+    return parts.join(", ");
+  }
+
+  /* ---------- Split PDF helpers ---------- */
+  async function makeSplitBytes(){
+    const idx=Array.from(state.selected).sort((a,b)=>a-b);
+    const out=await PDFDocument.create();
+    const pages=await out.copyPages(state.srcDoc, idx);
+    pages.forEach(p=>out.addPage(p));
+    return await out.save();
+  }
+  el("dlsplit").addEventListener("click", async ()=>{
+    if(state.selected.size===0){ setStatus("先选至少一页。", true); return; }
+    setStatus("正在拆分…");
+    try{
+      const bytes=await makeSplitBytes();
+      const label=compressRanges(Array.from(state.selected).sort((a,b)=>a-b)).replace(/[, ]+/g,"_");
+      downloadBlob(new Blob([bytes],{type:"application/pdf"}), state.baseName+"_第"+label+"页.pdf");
+      setStatus("已下载拆分 PDF。");
+    }catch(err){ console.error(err); setStatus("拆分失败："+(err.message||err), true); }
+  });
+
+  /* ---------- Build the instruction text ---------- */
+  function pageLabel(){
+    return compressRanges(Array.from(state.selected).sort((a,b)=>a-b)).replace(/-/g,"–");
+  }
+  function buildInstruction(){
+    const langMap={
+      bi:"用中英双语：正文以中文为主，所有关键术语、概念、定理名保留英文原词，首次出现时中英并列（如 鞅 martingale）。",
+      zh:"全部用中文书写，但关键术语保留英文原词。",
+      en:"Write everything in English."
+    };
+    const verbMap={
+      lean:"篇幅精简，只保留最关键的内容，能省则省。",
+      std:"篇幅适中，覆盖要点的同时保持信息密度。",
+      rich:"篇幅详尽，逐点展开，重视推导过程与直觉解释，必要时举例。"
+    };
+    const presetMap={
+      default:"沿用定量金融学习笔记的一贯模板：直接、密度高，不寒暄、不写「让我们」「总而言之」这类 AI 腔的过渡和总结套话。所有公式用 LaTeX（行内 $...$，独立公式用 $$...$$）。",
+      minimal:"以 bullet 要点为主，结构尽量扁平，不要大段散文。公式用 LaTeX。",
+      deep:"逐节深入，重视数学推导与背后的直觉，必要时举例说明。公式用 LaTeX。",
+      interview:"围绕面试考点组织，把内容拆成「考点 → 可能被问到的问题 → 简洁答案」的形式。公式用 LaTeX。",
+      custom:"公式用 LaTeX（行内 $...$，独立 $$...$$）。"
+    };
+    const sample=el("sample").value.trim();
+    const custom=el("custom").value.trim();
+    const secs=CONTENT.filter(c=>c.on).map(c=>"- "+c.label);
+
+    const parts=[];
+    parts.push("你在帮我把附带的这份 PDF 整理成学习笔记。这份 PDF 是从原文里拆出来的第 "+pageLabel()+" 页。");
+    parts.push(langMap[state.lang]);
+    parts.push(verbMap[state.verb]);
+    if(presetMap[state.preset]) parts.push(presetMap[state.preset]);
+    if(secs.length) parts.push("请包含且仅包含以下板块（按此顺序；某板块在本页没有对应内容可略过，但不要自行新增其他板块）：\n"+secs.join("\n"));
+    if(sample) parts.push("下面是我以前写的笔记片段。请严格模仿它的结构、排版方式、用词习惯和语气来写新的笔记：\n<样本>\n"+sample+"\n</样本>");
+    if(custom) parts.push("额外要求：\n"+custom);
+    parts.push("直接输出 Markdown 笔记本身，不要任何开场白、说明或结束语。");
+    return parts.join("\n\n");
+  }
+
+  /* ---------- Generate ---------- */
+  goBtn.addEventListener("click", ()=>generate(false));
+  el("regenBtn").addEventListener("click", ()=>generate(false));
+  el("continueBtn").addEventListener("click", ()=>generate(true));
+
+  async function generate(isContinue){
+    if(state.busy) return;
+    if(state.selected.size===0){ setStatus("先选至少一页。", true); return; }
+    setBusy(true);
+    try{
+      if(!isContinue){
+        setStatus("正在拆分选中的页…");
+        const bytes = await makeSplitBytes();
+        const b64 = abToBase64(bytes);
+        const instruction = buildInstruction();
+        state.conversation = [{
+          role:"user",
+          content:[
+            { type:"document", source:{ type:"base64", media_type:"application/pdf", data:b64 } },
+            { type:"text", text:instruction }
+          ]
+        }];
+        state.noteMd="";
+      }else{
+        state.conversation.push({ role:"user", content:"接着上面的笔记继续写，从你停下的地方接续，不要重复已经写过的内容，也不要重写开头。" });
+      }
+
+      setStatus("Claude 正在读这几页并生成笔记…");
+      truncEl.classList.remove("on");
+      const { text, truncated } = await callClaude(state.conversation);
+
+      state.conversation.push({ role:"assistant", content:text });
+      state.noteMd += (isContinue ? "" : "") + text;
+      renderNote(state.noteMd);
+      outEl.classList.add("on");
+      truncEl.classList.toggle("on", truncated);
+      setStatus(truncated ? "已生成一段（到长度上限）。可点「继续生成」。" : "笔记已生成。");
+      outEl.scrollIntoView({behavior:"smooth", block:"start"});
+    }catch(err){
+      console.error(err);
+      setStatus("生成失败："+(err.message||err), true);
+    }finally{ setBusy(false); }
+  }
+
+  async function callClaude(messages){
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({
+        model:"claude-sonnet-4-6",
+        max_tokens:1000,
+        messages
+      })
+    });
+    if(!resp.ok){
+      let detail="";
+      try{ const j=await resp.json(); detail=j.error?.message||JSON.stringify(j); }catch(e){ detail=await resp.text(); }
+      throw new Error("API "+resp.status+"："+detail);
+    }
+    const data=await resp.json();
+    const text=(data.content||[]).map(b=>b.type==="text"?b.text:"").filter(Boolean).join("\n");
+    const truncated = data.stop_reason==="max_tokens";
+    if(!text) throw new Error("模型没有返回文本。");
+    return { text, truncated };
+  }
+
+  /* ---------- Markdown + KaTeX render ---------- */
+  function renderNote(md){
+    const math=[];
+    let s=md.replace(/\$\$([\s\S]+?)\$\$/g, m=>{ math.push(m); return "@@M"+(math.length-1)+"@@"; });
+    s=s.replace(/\$([^\$\n]+?)\$/g, m=>{ math.push(m); return "@@M"+(math.length-1)+"@@"; });
+    let html;
+    try{ html=marked.parse(s,{breaks:false,gfm:true}); }catch(e){ html=s.replace(/\n/g,"<br>"); }
+    html=html.replace(/@@M(\d+)@@/g, (_,i)=>math[+i]);
+    noteEl.innerHTML=html;
+    if(window.renderMathInElement){
+      try{
+        renderMathInElement(noteEl,{
+          delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+          throwOnError:false
+        });
+      }catch(e){}
+    }
+  }
+
+  el("copyBtn").addEventListener("click", async ()=>{
+    try{ await navigator.clipboard.writeText(state.noteMd); setStatus("Markdown 已复制。"); }
+    catch(e){ setStatus("复制失败，可手动选择文本。", true); }
+  });
+  el("dlmdBtn").addEventListener("click", ()=>{
+    const blob=new Blob([state.noteMd],{type:"text/markdown;charset=utf-8"});
+    downloadBlob(blob, state.baseName+"_笔记_第"+pageLabel().replace(/[–, ]+/g,"_")+"页.md");
+  });
+
+  /* ---------- State helpers ---------- */
+  function setBusy(b){
+    state.busy=b;
+    goBtn.classList.toggle("busy",b);
+    goBtn.disabled = b || state.selected.size===0;
+    el("continueBtn").disabled=b; el("regenBtn").disabled=b;
+    goLabel.textContent = b ? "生成中…" : "生成笔记";
+  }
+  function updateGo(){ if(!state.busy) goBtn.disabled = state.selected.size===0 || !state.srcDoc; }
+
+  /* ---------- Generic helpers ---------- */
+  function abToBase64(buf){
+    let binary=""; const bytes=new Uint8Array(buf); const chunk=0x8000;
+    for(let i=0;i<bytes.length;i+=chunk){ binary+=String.fromCharCode.apply(null, bytes.subarray(i,i+chunk)); }
+    return btoa(binary);
+  }
+  function downloadBlob(blob,name){
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }
+  function range0(n){ return Array.from({length:n},(_,i)=>i); }
+  function formatSize(b){ if(b<1024) return b+" B"; if(b<1048576) return (b/1024).toFixed(0)+" KB"; return (b/1048576).toFixed(1)+" MB"; }
+  function setStatus(msg,err){ statusEl.textContent=msg||""; statusEl.classList.toggle("err",!!err); }
+})();
+</script>
+</body>
+</html>

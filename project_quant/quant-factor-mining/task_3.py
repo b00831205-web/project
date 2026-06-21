@@ -7,7 +7,7 @@ if __name__ == "__main__":
     parse = argparse.ArgumentParser(description="calculate quantitative factors")
     parse.add_argument("--date", type= str, required=True)
     parse.add_argument("--batch", type= str, required=True)
-    parse.add_argument("--days", type=int, required=False, default = 2)
+    parse.add_argument("--days", type=int, required=False, default = 5)
     parse.add_argument("--halflife", type=int, required=False, default = 10)
     parse.add_argument("--period", type=int, required=False, default =20)
     args = parse.parse_args()
@@ -27,14 +27,14 @@ if __name__ == "__main__":
         TwentyDayNegVotality = factor_mining.TwentyDayNegVotality(daily_return=daily_return, tickers=tickers)
         TwentyDayAvgVol = factor_mining.TwentyDayAvgVol(volume=volume, tickers=tickers)
         VolPriceCorr=factor_mining.VolPriceCorr(volume=volume,daily_return=daily_return,tickers=tickers)
-        batch = pd.concat([daily_return.add_prefix("daily_return_"), 
-                           excess_return.add_prefix("excess_return_"), 
+        batch = pd.concat([daily_return.add_prefix("DailyReturn_"), 
+                           excess_return.add_prefix("ExcessReturn_"), 
                            momentum, 
-                           ShortTermReversal.add_prefix("Short_Term_Reversal_"), 
-                           TwentyDayVolatility.add_prefix("Twenty_Day_Volatility_"), 
-                           TwentyDayNegVotality.add_prefix("Twenty_Day_Neg_Volatility_"), 
+                           ShortTermReversal.add_prefix("ShortTermReversal_"), 
+                           TwentyDayVolatility.add_prefix("TwentyDayVolatility_"), 
+                           TwentyDayNegVotality.add_prefix("TwentyDayNegVolatility_"), 
                            TwentyDayAvgVol.add_prefix("TwentyDayAvgVol_"), 
-                           VolPriceCorr.add_prefix("vol_pri_corr_")],
+                           VolPriceCorr.add_prefix("VolPriCorr_")],
                            axis=1)
         return batch
 
