@@ -1,0 +1,5 @@
+
+project_quant/quant-factor-mining/airflow/airflow.db-wal
+project_quant/quant-factor-mining/airflow/*.db
+project_quant/quant-factor-mining/airflow/*.db-wal
+project_quant/quant-factor-mining/airflow/*.db-shm
