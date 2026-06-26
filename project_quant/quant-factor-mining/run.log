@@ -1,0 +1,5 @@
+>>> start
+>>> status 200
+>>> table found: True
+>>> tickers: 503 ['MMM', 'AOS', 'ABT', 'ABBV', 'ACN']
+>>> SAVED

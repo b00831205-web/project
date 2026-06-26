@@ -1,6 +1,7 @@
 import textwrap
 from datetime import datetime, timedelta
 from airflow.providers.standard.operators.bash import BashOperator
+from airflow.utils.trigger_rule import TriggerRule
 from airflow.sdk import DAG
 
 with DAG("quant_factor_mining",
@@ -28,6 +29,7 @@ with DAG("quant_factor_mining",
         '"cd E:\\Handout\\project\\project_quant\\quant-factor-mining; '
         '.venv-win\\Scripts\\python.exe task_2.py '
         '--date {{ ds }} --batch {{ run_id }}"',
+        trigger_rule = TriggerRule.ALL_DONE
     )
     t3 = BashOperator(
         task_id = "factor_calculation",
@@ -36,6 +38,15 @@ with DAG("quant_factor_mining",
         '.venv-win\\Scripts\\python.exe task_3.py '
         '--date {{ ds }} --batch {{ run_id }}"',
     )
+    task_retry = BashOperator(
+        task_id = "retry_downloading",
+        bash_command='powershell.exe -Command '
+        '"cd E:\\Handout\\project\\project_quant\\quant-factor-mining; '
+        '.venv-win\\Scripts\\python.exe task_retry.py '
+        '--date {{ ds }} --batch {{ run_id }}"',
+        trigger_rule = TriggerRule.ALL_FAILED
+    )
     
 
 t1 >> t2 >> t3
+t1 >> task_retry

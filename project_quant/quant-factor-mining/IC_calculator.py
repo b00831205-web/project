@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+from scipy import stats
 
 def different_holding_period(close:pd.DataFrame, tickers: list, periods: list | int)->pd.DataFrame:
     different_holding=pd.DataFrame()
@@ -7,6 +8,20 @@ def different_holding_period(close:pd.DataFrame, tickers: list, periods: list | 
         for period in periods:    
             different_holding[f"{period}DaysHoldingPeriod_{ticker}"] = close[ticker].pct_change(period).shift(-period)
     return different_holding
+
+def data_standarization(df:pd.DataFrame)->pd.DataFrame:
+    factors = list(set(cols.rsplit("_",1)[0] for cols in df.columns))
+    tickers = list(set(cols.rsplit("_",1)[1] for cols in df.columns))
+    temp = pd.DataFrame()
+    for factor in factors:
+        cols = [f'{factor}_{ticker}' for ticker in tickers]
+        cols = [c for c in cols if c in df.columns]
+        truncate_data=df[cols]
+        ranked = truncate_data.rank(axis=1,pct=True)*2-1
+        temp[cols]=ranked
+
+            #truncate_data.iloc[index] = truncate_data.iloc[index]/truncate_data.iloc[index].max()，最大值归一化受极端值影响大，不建议使用
+    return temp
 
 def TM_Information_correlation(tickers : list, factors: pd.DataFrame, different_holding_period: pd.DataFrame, output_path=str)->pd.DataFrame:
     TM_IC_matrix=pd.DataFrame() #时序IC
@@ -106,10 +121,51 @@ def summary(cross_section_IC_matrix:pd.DataFrame)->pd.DataFrame:
     return pd.DataFrame({
         'IC_mean' : cross_section_IC_matrix.mean(),
         'IC_std': cross_section_IC_matrix.std(),
-        'IR': cross_section_IC_matrix.mean()/cross_section_IC.std(),
-        'IC>0 pct': (cross_section_IC_matrix>0).mean()
+        'IR': cross_section_IC_matrix.mean()/cross_section_IC_matrix.std(),
+        'IC>0 pct': (cross_section_IC_matrix>0).mean(),
+        'n': cross_section_IC_matrix.count(),
     })
 
+def multiplu_testing(cross_section_IC_matrix_summary:pd.DataFrame)->pd.DataFrame:
+    significant_t = pd.DataFrame({
+        "t":cross_section_IC_matrix_summary["IR"]*cross_section_IC_matrix_summary["n"],
+        "p_value":stats.t.sf(x=cross_section_IC_matrix_summary["IR"]*cross_section_IC_matrix_summary["n"],df=cross_section_IC_matrix_summary["n"])
+        })
+    significant_t['significant'] = "True" if significant_t['p_value'] < stats.t.sf(x=0.05, df=cross_section_IC_matrix_summary['n']) else "False"
+    significant_t['Bonferroni_p-value'] = stats.t.sf(x=0.05/cross_section_IC_matrix_summary['n'], df=cross_section_IC_matrix_summary)
+    significant_t['Bonferroni_significant'] = "True" if significant_t['p_value'] < stats.t.sf(x=0.05/cross_section_IC_matrix_summary['n'], df=cross_section_IC_matrix_summary) else "False"
+    significant_t['Rank'] = significant_t.sort_values(by="p_value").rank(ascending=0,method='max')
+    significant_t['BH_p-value'] = stats.t.sf(x=significant_t['Rank']/cross_section_IC_matrix_summary['n']*0.05, df=cross_section_IC_matrix_summary['n'])
+    significant_t['BH_significant'] = "True" if significant_t['p_value'] < stats.t.sf(x=significant_t['Rank']/cross_section_IC_matrix_summary['n']*0.05, df=cross_section_IC_matrix_summary['n']) else "False"
+
+def orthogonal_analysis(factors_ticker: pd.DataFrame):
+    factors = list(set(col.rsplit('_')[1] for col in factors_ticker.columns))
+    tickers = list(set(col.rsplit('_')[0] for col in factors_ticker.columns))
+    corr_accumulator = pd.DataFrame(0.0, index = factors, columns=factors)
+    valid_days=0
+    for date in factors_ticker.index:
+        row = factors_ticker.loc[date]
+        cross_section_daily = pd.DataFrame({
+            factor: row[[f'{factor}_{ticker}' for ticker in tickers]].values
+            for factor in factors
+        }, index=tickers)
+        
+        if cross_section_daily.isnull().all().any(): #500*8 bool矩阵，每个值是否为NaN，对每列，是否全部都是NaN（返回一个长度为8的series），这8列中，是否有至少一列全是NaN
+            continue
+        
+        corr_accumulator += cross_section_daily.corr() #corr计算所有数据所有列间的相关性系数
+        valid_days+=1
+    avg_corr = corr_accumulator/valid_days
+    high_corr_dict={
+        column: (avg_corr[column]>0.5).index for column in avg_corr.columns 
+    }
+
+
+        
+
+    
+def rolling_IC(factors:pd.DataFrame, different_holding_period: pd.DataFrame)-> pd.DataFrame:
+    factors.rolling(126).corrwith()
 
 if __name__=='__main__':
     
@@ -123,10 +179,12 @@ if __name__=='__main__':
     ticker_list=close_data.columns
     periods=[1,5,20]
     
-    different_holding_period_df = different_holding_period(close=close_data, tickers=ticker_list, periods=periods)
+    different_holding_period_df = data_standarization(different_holding_period(close=close_data, tickers=ticker_list, periods=periods))
     
     tm_output = "tmp/TM_IC.parquet"
     cs_output = "tmp/CS_IC.parquet"
+    factor_data = data_standarization(factor_data)
+    
     
     time_series_IC = TM_Information_correlation(tickers=ticker_list, factors=factor_data, different_holding_period=different_holding_period_df, output_path=tm_output)
     cross_section_IC = CS_Information_Correlation(factors=factor_data, different_holding_period=different_holding_period_df, output_path=cs_output)
