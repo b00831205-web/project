@@ -3,3 +3,29 @@ project_quant/quant-factor-mining/airflow/airflow.db-wal
 project_quant/quant-factor-mining/airflow/*.db
 project_quant/quant-factor-mining/airflow/*.db-wal
 project_quant/quant-factor-mining/airflow/*.db-shm
+
+# Airflow runtime files
+project_quant/quant-factor-mining/airflow/*.db
+project_quant/quant-factor-mining/airflow/*.db-wal
+project_quant/quant-factor-mining/airflow/*.db-shm
+project_quant/quant-factor-mining/airflow/*.cfg.save
+project_quant/quant-factor-mining/airflow/*.log
+project_quant/quant-factor-mining/airflow/*.err
+project_quant/quant-factor-mining/airflow/*.out
+project_quant/quant-factor-mining/airflow/logs/
+project_quant/quant-factor-mining/airflow/simple_auth_manager_passwords.json.generated
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Output
+output.txt
+run.log
+tmp/
+
+..bfg-report/
+*.bfg-report/
+
+..bfg-report/

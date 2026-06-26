@@ -107,9 +107,15 @@ def CS_Information_Correlation(factors:pd.DataFrame, different_holding_period: p
     result=[]
     for factor, tickers in ticker_factor_dict.items():
         for holding_period , holding_period_ticker in ticker_holding_dict.items():
+            print("factor columns:", tickers.columns[:5].tolist())
+            print("holding columns:", holding_period_ticker.columns[:5].tolist())
+            print("factor shape:", tickers.shape)
+            print("holding shape:", holding_period_ticker.shape)
             ic_series= tickers.corrwith(holding_period_ticker, method='pearson',axis=1)
             ic_series.name=f"{factor}_{holding_period}"
             result.append(ic_series)
+            break
+        break
     CS_IC_matrix=pd.concat(result, axis=1)
 
     CS_IC_matrix.to_parquet(os.path.join(os.getcwd(), output_path))
@@ -126,7 +132,7 @@ def summary(cross_section_IC_matrix:pd.DataFrame)->pd.DataFrame:
         'n': cross_section_IC_matrix.count(),
     })
 
-def multiplu_testing(cross_section_IC_matrix_summary:pd.DataFrame)->pd.DataFrame:
+def multiple_testing(cross_section_IC_matrix_summary:pd.DataFrame)->pd.DataFrame:
     significant_t = pd.DataFrame({
         "t":cross_section_IC_matrix_summary["IR"]*cross_section_IC_matrix_summary["n"],
         "p_value":stats.t.sf(x=cross_section_IC_matrix_summary["IR"]*cross_section_IC_matrix_summary["n"],df=cross_section_IC_matrix_summary["n"])
