@@ -1,5 +1,6 @@
 from data_acquisition import retry_batches, merge_checkpoints
 import argparse
+import datetime
 import os
 import pandas as pd
 
@@ -16,14 +17,18 @@ if __name__ == "__main__":
     raw_volume_path = os.path.join(tmp_dir, "raw_volume.parquet")
 
 
-    start_date = "2021-01-01"
+    if os.path.exists(raw_close_path): #读取上次失败的节点，以上次失败的时间点为开始日期
+        existing = pd.read_parquet(raw_close_path)
+        start_date = (existing.index.max() + pd.Timedelta(days=1)).strftime("%Y-%m-%d") 
+    else:
+        start_date="2021-01-01"
     close, volume =retry_batches(start_date=start_date, end_date=args.date, max_retries=3)
     if close is not None and volume is not None:
         if os.path.exists(raw_close_path) and os.path.exists(raw_volume_path):
             curr_close = pd.read_parquet(raw_close_path)
             curr_volume = pd.read_parquet(raw_volume_path)
-            pd.concat([curr_close, close]).to_parquet(raw_close_path)
-            pd.concat([curr_volume, volume]).to_parquet(raw_volume_path)
+            pd.concat([curr_close, close]).loc[~pd.concat([curr_close, close]).index.duplicated(keep="last")].to_parquet(raw_close_path)
+            pd.concat([curr_volume, volume]).loc[~pd.concat([curr_volume, volume]).index.duplicated(keep="last")].to_parquet(raw_volume_path)
         else:
             close.to_parquet(raw_close_path)
             volume.to_parquet(raw_volume_path)

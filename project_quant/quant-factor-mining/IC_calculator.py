@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from scipy import stats
+import numpy as np
 
 def different_holding_period(close:pd.DataFrame, tickers: list, periods: list | int)->pd.DataFrame:
     different_holding=pd.DataFrame()
@@ -105,17 +106,11 @@ def CS_Information_Correlation(factors:pd.DataFrame, different_holding_period: p
             ticker_holding_dict[holding_period] = df
 
     result=[]
-    for factor, tickers in ticker_factor_dict.items():
+    for factor, factor_df in ticker_factor_dict.items():
         for holding_period , holding_period_ticker in ticker_holding_dict.items():
-            print("factor columns:", tickers.columns[:5].tolist())
-            print("holding columns:", holding_period_ticker.columns[:5].tolist())
-            print("factor shape:", tickers.shape)
-            print("holding shape:", holding_period_ticker.shape)
-            ic_series= tickers.corrwith(holding_period_ticker, method='pearson',axis=1)
+            ic_series= factor_df.corrwith(holding_period_ticker[factor_df.columns], method='pearson',axis=1)
             ic_series.name=f"{factor}_{holding_period}"
             result.append(ic_series)
-            break
-        break
     CS_IC_matrix=pd.concat(result, axis=1)
 
     CS_IC_matrix.to_parquet(os.path.join(os.getcwd(), output_path))
@@ -134,7 +129,7 @@ def summary(cross_section_IC_matrix:pd.DataFrame)->pd.DataFrame:
 
 def multiple_testing(cross_section_IC_matrix_summary:pd.DataFrame)->pd.DataFrame:
     significant_t = pd.DataFrame({
-        "t":cross_section_IC_matrix_summary["IR"]*cross_section_IC_matrix_summary["n"],
+        "t":cross_section_IC_matrix_summary["IR"]*np.sqrt(cross_section_IC_matrix_summary["n"]),
         "p_value":stats.t.sf(x=cross_section_IC_matrix_summary["IR"]*cross_section_IC_matrix_summary["n"],df=cross_section_IC_matrix_summary["n"])
         })
     significant_t['significant'] = "True" if significant_t['p_value'] < stats.t.sf(x=0.05, df=cross_section_IC_matrix_summary['n']) else "False"
@@ -145,14 +140,18 @@ def multiple_testing(cross_section_IC_matrix_summary:pd.DataFrame)->pd.DataFrame
     significant_t['BH_significant'] = "True" if significant_t['p_value'] < stats.t.sf(x=significant_t['Rank']/cross_section_IC_matrix_summary['n']*0.05, df=cross_section_IC_matrix_summary['n']) else "False"
 
 def orthogonal_analysis(factors_ticker: pd.DataFrame):
-    factors = list(set(col.rsplit('_')[1] for col in factors_ticker.columns))
-    tickers = list(set(col.rsplit('_')[0] for col in factors_ticker.columns))
+    factors = list(set(col.rsplit('_',1)[0] for col in factors_ticker.columns))
+    tickers = list(set(col.rsplit('_',1)[1] for col in factors_ticker.columns))
     corr_accumulator = pd.DataFrame(0.0, index = factors, columns=factors)
     valid_days=0
     for date in factors_ticker.index:
         row = factors_ticker.loc[date]
         cross_section_daily = pd.DataFrame({
-            factor: row[[f'{factor}_{ticker}' for ticker in tickers]].values
+            factor: pd.Series({
+                ticker: row[f'{factor}_{ticker}'] 
+                for ticker in tickers 
+                if f"{factor}_{ticker}" in factors_ticker.columns
+                })
             for factor in factors
         }, index=tickers)
         
@@ -165,11 +164,9 @@ def orthogonal_analysis(factors_ticker: pd.DataFrame):
     high_corr_dict={
         column: (avg_corr[column]>0.5).index for column in avg_corr.columns 
     }
+    return avg_corr
 
 
-        
-
-    
 def rolling_IC(factors:pd.DataFrame, different_holding_period: pd.DataFrame)-> pd.DataFrame:
     factors.rolling(126).corrwith()
 
@@ -182,18 +179,23 @@ if __name__=='__main__':
     close_data=pd.read_parquet("tmp/close.parquet")
     factor_data=pd.read_parquet("tmp/factors.parquet")
     
-    ticker_list=close_data.columns
-    periods=[1,5,20]
-    
-    different_holding_period_df = data_standarization(different_holding_period(close=close_data, tickers=ticker_list, periods=periods))
-    
-    tm_output = "tmp/TM_IC.parquet"
-    cs_output = "tmp/CS_IC.parquet"
-    factor_data = data_standarization(factor_data)
-    
-    
-    time_series_IC = TM_Information_correlation(tickers=ticker_list, factors=factor_data, different_holding_period=different_holding_period_df, output_path=tm_output)
-    cross_section_IC = CS_Information_Correlation(factors=factor_data, different_holding_period=different_holding_period_df, output_path=cs_output)
+    orth_result=orthogonal_analysis(factors_ticker=factor_data)
+    print(orth_result)
 
-    print(pd.read_parquet("tmp/CS_IC.parquet"))
-    print(summary(cross_section_IC_matrix=cross_section_IC))
+
+    # ticker_list=close_data.columns
+    # periods=[1,5,20]
+    
+    # different_holding_period_df = data_standarization(different_holding_period(close=close_data, tickers=ticker_list, periods=periods))
+    
+    # tm_output = "tmp/TM_IC.parquet"
+    # cs_output = "tmp/CS_IC.parquet"
+    # factor_data = data_standarization(factor_data)
+    
+    
+    # time_series_IC = TM_Information_correlation(tickers=ticker_list, factors=factor_data, different_holding_period=different_holding_period_df, output_path=tm_output)
+    # cross_section_IC = CS_Information_Correlation(factors=factor_data, different_holding_period=different_holding_period_df, output_path=cs_output)
+
+    # print(pd.read_parquet("tmp/CS_IC.parquet"))
+    # print(summary(cross_section_IC_matrix=cross_section_IC))
+    

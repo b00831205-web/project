@@ -13,11 +13,12 @@ def excess_return(daily_return: pd.DataFrame) -> pd.DataFrame:
     return excess_return
 
 def momentum(df: pd.DataFrame, tickers: list, day:int =2) -> pd.DataFrame:
-    mmt=pd.DataFrame()
+    mmt={}
     for ticker in tickers:
         current_price=df[ticker]
         start_price=df[ticker].shift(day-1)
         mmt[f"{day}DayMomentum_{ticker}"]=(current_price-start_price)/start_price
+    mmt = pd.DataFrame(mmt)
     return mmt
     
 def EWMA(window_data, wk: float)->float: #做.apply()时由于切分下来的nparray会直接传入第一个参数，因此要把window_data写在最前面
@@ -28,12 +29,13 @@ def EWMA(window_data, wk: float)->float: #做.apply()时由于切分下来的npa
     return ewma
 
 def ShortTermReversal(excess_return: pd.DataFrame,tickers: list, halflife: int, period: int)->pd.DataFrame:
-    short_term_reversal=pd.DataFrame()
+    short_term_reversal={}
     for ticker in tickers:
         if ticker not in excess_return.columns:
             continue
         wk = (0.5**(1/halflife))
         short_term_reversal[ticker]=-excess_return[ticker].rolling(period).apply(EWMA, raw=True, args=(wk,)) #rolling().apply()传递的是一个长为n的nparray，直接用[]索引
+    short_term_reversal = pd.DataFrame(short_term_reversal)
     return short_term_reversal #反转因子信号是负的——过去收益率高，预期未来会回落
 
 '''
@@ -52,31 +54,35 @@ def get_short_term_reversal_ewma(excess_return, ticker, period, halflife):
     '''
 
 def TwentyDayVolatility(daily_return:pd.DataFrame, tickers:list)->pd.DataFrame: #获取20日波动率
-    tdv=pd.DataFrame()
+    tdv={}
     for ticker in tickers:
         if ticker not in daily_return.columns:
             continue
         tdv[ticker]=daily_return[ticker].rolling(20).std()
+    tdv = pd.DataFrame(tdv)
     return tdv
 
 def TwentyDayNegVotality(daily_return:pd.DataFrame, tickers:list)->pd.DataFrame: #获取20日负收益波动率
-    tdnv=pd.DataFrame()
+    tdnv={}
     for ticker in tickers:
         if ticker not in daily_return.columns:
             continue
         s = daily_return[ticker]
         neg_return = s.where(s<0) #s.where(cond)的意思是：满足 cond 的保留，不满足的变成NaN
         tdnv[ticker] = neg_return.rolling(window=20, min_periods = 1). std()
+    tdnv = pd.DataFrame(tdnv)
     return tdnv
 
 def TwentyDayAvgVol(volume:pd.DataFrame, tickers:list)->pd.DataFrame: #20日平均成交量因子
-    tdav=pd.DataFrame()
+    rolling_tdav_dict={}
     for ticker in tickers:
-        tdav[ticker]=volume[ticker].rolling(20).mean()
-    return tdav
+        rolling_tdav_dict[ticker]=volume[ticker].rolling(20).mean()
+    rolling_tdav_dict = pd.DataFrame(rolling_tdav_dict)
+    return rolling_tdav_dict
 
 def VolPriceCorr(volume:pd.DataFrame, daily_return:pd.DataFrame, tickers:list)->pd.DataFrame: #20日量价相关系数
-    rolling_corr=pd.DataFrame()
+    rolling_corr_dict = {}
     for ticker in tickers:
-        rolling_corr[ticker]=daily_return[ticker].rolling(20).corr(volume[ticker])
+        rolling_corr_dict[ticker] = daily_return[ticker].rolling(20).corr(volume[ticker])
+    rolling_corr = pd.DataFrame(rolling_corr_dict)
     return rolling_corr
